@@ -1,5 +1,5 @@
 // يحفظ نسخة من البرنامج ليعمل دون اتصال، ويحدّثها في الخلفية عند توفر الإنترنت
-const CACHE = 'shawahid-v2';
+const CACHE = 'shawahid-v3';
 const FILES = ['./', './index.html', './pdfjs/pdf.min.mjs', './pdfjs/pdf.worker.min.mjs'];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
