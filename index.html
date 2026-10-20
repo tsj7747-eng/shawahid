@@ -203,7 +203,7 @@ th{color:var(--muted);font-weight:600;font-size:11px}
   #printArea .att.pg img{max-height:245mm}
   #printArea .att figcaption{font-size:9.5px;color:#444;margin-top:2px}
   #printArea .attn{font-size:10px;color:#444;padding:4px 0}
-  .pv,.toast{display:none !important}
+  .pv,.toast,.upd{display:none !important}
 }
 @page{size:A4;margin:10mm}
 .docb{margin-top:8px;max-width:420px}
@@ -219,6 +219,10 @@ th{color:var(--muted);font-weight:600;font-size:11px}
 .pvmsg{text-align:center;color:var(--muted);padding:40px 10px;font-size:14px}
 .toast{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom,0px));inset-inline:12px;margin:0 auto;max-width:460px;z-index:70;background:var(--ink);color:var(--bg);border-radius:12px;padding:12px 14px;display:flex;gap:10px;align-items:center;font-size:13.5px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
 .toast span{flex:1}
+.upd{position:sticky;top:0;z-index:60;display:flex;gap:10px;align-items:center;margin:0 0 10px;padding:10px 12px;border-radius:12px;background:var(--goldS);color:var(--gold);border:1px solid var(--gold);font-size:13.5px}
+.upd span{flex:1}
+.upd button{background:var(--gold);color:var(--bg);border:0;border-radius:8px;padding:8px 14px;font-weight:700;white-space:nowrap}
+.upd[hidden]{display:none}
 .toast button{background:var(--brand);color:#fff;border:0;border-radius:8px;padding:8px 12px;font-weight:600}
 </style>
 </head>
@@ -247,12 +251,13 @@ th{color:var(--muted);font-weight:600;font-size:11px}
 </div>
 
 <div class="wrap" id="app" hidden>
+<div class="upd" id="updBar" hidden role="status"><span>🔔 يوجد إصدار جديد من البرنامج<b id="updV"></b> — حدّث للحصول على آخر الميزات. بياناتك ومرفقاتك لن تتأثر.</span><button id="updGo" type="button">حدّث الآن</button></div>
 
 <header class="top">
   <div class="hl">
     <div>
       <h1>تقييم الأداء الوظيفي حسب البنود</h1>
-      <div class="sub">١١ عنصرًا · <span id="cntB"></span> بند متابعة · سلم ١–٥</div>
+      <div class="sub">١١ عنصرًا · <span id="cntB"></span> بند متابعة · سلم ١–٥ · <span id="appVer"></span></div>
     </div>
     <div class="icons">
       <button class="ib" id="themeBtn" title="المظهر">◐</button>
@@ -411,6 +416,8 @@ th{color:var(--muted);font-weight:600;font-size:11px}
 "use strict";
 /* ================= إعدادات المنتج والتخزين ================= */
 var PRODUCT="SHAWAHID",VERSION="1",SELLER_WA="966535677847";
+/* رقم إصدار البرنامج للمستخدم (غير رقم الترخيص VERSION) */
+var APP_VER="1.4";
 var PUBLIC_KEY={"kty": "EC", "x": "lhhgqnPakrm0Th_UjGXUSFIZUG8Al2ymWhC0-aDv2zI", "y": "aD_FeunDFVqxvxaLmeWBF_83h3hfIDRs9SyOqF9aJ18", "crv": "P-256"};
 var LS_STATE="sh_state_v1",LS_DEV="sh-device",LS_LIC="sh-lic";
 var IS_IOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
@@ -1473,11 +1480,36 @@ deviceCode().then(function(code){
   return idbGet("licKey").then(function(k){k=k||lsGet(LS_LIC);
     return (k?verifyKey(code,k).catch(function(){return false;}):Promise.resolve(false)).then(function(ok){
       if(ok)openApp();else showGate(code);});});});
+/* ---- رقم الإصدار وشريط «يوجد تحديث» حتى يحدّث المستخدم ---- */
+function verParts(v){return String(v||"0").split(".").map(function(x){return Number(x)||0;});}
+function isNewer(a,b){a=verParts(a);b=verParts(b);
+  for(var i=0;i<Math.max(a.length,b.length);i++){var x=a[i]||0,y=b[i]||0;if(x!==y)return x>y;}return false;}
+function showUpd(v){
+  $("#updV").textContent=v?(" (الإصدار "+AR(v)+")"):"";$("#updBar").hidden=false;
+  $("#appVer").textContent="الإصدار "+AR(APP_VER)+" — يوجد تحديث";}
+function checkVer(){
+  if(location.protocol!=="https:"&&location.hostname!=="127.0.0.1")return;
+  fetch("version.json?t="+Date.now(),{cache:"no-store"}).then(function(r){return r.ok?r.json():null;})
+    .then(function(j){if(j&&isNewer(j.v,APP_VER))showUpd(j.v);}).catch(function(){});}
+/* التحديث: تُجلب الصفحة الجديدة إلى نسخة الجهاز ثم يُعاد التحميل (البيانات والمرفقات لا تتأثر) */
+function applyUpd(){
+  var b=$("#updGo");b.disabled=true;b.textContent="جارٍ التحديث…";
+  var reload=function(){location.reload();};
+  if(!window.caches){reload();return;}
+  fetch("./index.html",{cache:"no-store"}).then(function(r){
+    if(!r.ok)return;
+    return caches.keys().then(function(ks){return Promise.all(ks.map(function(k){
+      return caches.open(k).then(function(c){return Promise.all([c.put("./index.html",r.clone()),c.put("./",r.clone())]);});}));});
+  }).catch(function(){}).then(reload);}
+$("#appVer").textContent="الإصدار "+AR(APP_VER);
+$("#updGo").onclick=applyUpd;
+checkVer();
+document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible")checkVer();});
+setInterval(checkVer,30*60*1000);
 if("serviceWorker" in navigator&&location.protocol==="https:"){
   var hadCtl=!!navigator.serviceWorker.controller;
   navigator.serviceWorker.register("sw.js").catch(function(){});
-  navigator.serviceWorker.addEventListener("controllerchange",function(){
-    if(hadCtl)toast("نزل تحديث جديد للبرنامج ✓",{label:"تحديث الآن",fn:function(){location.reload();}});});}
+  navigator.serviceWorker.addEventListener("controllerchange",function(){if(hadCtl)checkVer();});}
 })();
 </script>
 
