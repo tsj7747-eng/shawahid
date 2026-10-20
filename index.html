@@ -323,7 +323,7 @@ th{color:var(--muted);font-weight:600;font-size:11px}
 <section id="tab-up" hidden>
   <div class="pc">
     <h3>شاهد جديد: اكتبه وارفع دليله معًا</h3>
-    <div class="sub" style="margin:4px 0 10px">اكتب ما عملته بكلماتك ولو كلمتين، وأرفق الملف أو الصورة. يحدّد البرنامج أنسب بند من كلماتك ويضيف العبارة والمرفق إليه، ويمكنك نقله لبند آخر.</div>
+    <div class="sub" style="margin:4px 0 10px">اكتب ما عملته بكلماتك ولو كلمتين، وأرفق الملف أو الصورة. يحدّد البرنامج أنسب بند من كلماتك ويضيف العبارة والمرفق إليه، ويمكنك نقله لبند آخر. ويمكنك اختيار عدة صور أو ملفات معًا، فتظهر قائمة تكتب فيها لكل ملف كلمتين ويُربط كل ملف ببنده.</div>
     <div class="nblock"><h3>صياغة الشاهد — بكلماتك</h3>
       <textarea id="fnote" placeholder="مثال: تحفيز الطلاب — كرّمت المتميزين بشهادات شكر آخر كل أسبوع"></textarea></div>
     <div class="drop" id="drop"><b>أرفق الدليل (اختياري)</b>PDF · صور · Word · Excel — حتى ٢٠ ميجابايت · تُحفظ على جهازك</div>
@@ -333,6 +333,7 @@ th{color:var(--muted);font-weight:600;font-size:11px}
     <div class="row"><button class="btn" id="noFileGo">صُغ واربط بلا مرفق</button></div>
     <div class="status" id="upSt"></div>
     <div id="sugBox"></div>
+    <div id="batchBox"></div>
   </div>
   <div class="pc">
     <h3>كل المرفقات</h3>
@@ -758,7 +759,7 @@ document.addEventListener("click",function(ev){
   if(ac){applyPick(Number(ac.dataset.acc));return;}
   if(t.closest("[data-done]")){
     $("#sugBox").innerHTML="";$("#fnote").value="";
-    pendingFile=null;sugPicks=[];lastApplied=null;upSt("");return;}
+    pendingFile=null;sugPicks=[];lastApplied=null;upSt("");renderBatch();return;}
   if(t.closest("#drop")){pickFiles(null);return;}
   var w=t.closest("[data-w]");
   if(w){goTab("ai");$("#aiSel").value=w.dataset.w;
@@ -785,10 +786,11 @@ $("#themeBtn").onclick=function(){
   var n=c==="dark"?"light":c==="light"?"dark":(matchMedia("(prefers-color-scheme: dark)").matches?"light":"dark");
   document.documentElement.setAttribute("data-theme",n);
   try{localStorage.setItem("bnod_th",n);}catch(e){}};
-$("#printBtn").onclick=function(){preparePrint();};
+$("#printBtn").onclick=function(){warnUnlinked(preparePrint);};
 $("#dlCsv").onclick=function(){offer("bnod.csv",csv(),"الجدول");};
-$("#dlPdf").onclick=function(){exportPdf();};
-$("#dlHtml").onclick=function(){offer("namathij-taqyeem.html",fullDoc(),"النماذج");};
+$("#dlPdf").onclick=function(){warnUnlinked(exportPdf);};
+$("#dlHtml").onclick=function(){$("#dlSt").textContent="جارٍ تجهيز النماذج مع المرفقات…";
+  fullDocWithFiles().then(function(html){$("#dlSt").textContent="";offer("namathij-taqyeem.html",html,"النماذج");});};
 $("#dlJson").onclick=function(){
   $("#dlSt").textContent="جارٍ تجهيز النسخة الاحتياطية…";
   buildBackup().then(function(txt){
@@ -948,6 +950,30 @@ function preparePrint(){
     if(IS_IOS){toast("الملف جاهز للطباعة ("+AR(total)+" مرفق).",{label:"اطبع الآن",fn:function(){hideToast();window.print();}});return;}
     hideToast();window.print();
   }).catch(function(){printing=false;toast("تعذّر تجهيز الطباعة، أعد المحاولة.",null,4000);});}
+/* ---- ملف النماذج (HTML) مع الصور وصفحات PDF مضمّنة تحت كل بند ---- */
+function fullDocWithFiles(){
+  var att={},chain=Promise.resolve();
+  function add(k,h){att[k]=(att[k]||"")+h;}
+  EL.forEach(function(e){e.b.forEach(function(_,i){var k=KEY(e,i);
+    (S.it[k].fl||[]).forEach(function(f){chain=chain.then(function(){
+      var r=FILES[f.id];
+      if(!r){add(k,'<div class="attn">مرفق «'+esc(f.n)+'» غير موجود على هذا الجهاز.</div>');return;}
+      if(isImg(r))return blobToDataURL(r.blob).then(function(u){
+        add(k,'<figure class="att ph"><img src="'+u+'" alt=""><figcaption>'+esc(r.name)+'</figcaption></figure>');},
+        function(){add(k,'<div class="attn">تعذّر تضمين «'+esc(r.name)+'».</div>');});
+      if(isPdf(r))return pdfPages(f.id).then(function(pages){
+        add(k,pages.map(function(u,n){return '<figure class="att pg"><img src="'+u+'" alt=""><figcaption>'+esc(r.name)+' — صفحة '+AR(n+1)+' من '+AR(pages.length)+'</figcaption></figure>';}).join(""));},
+        function(){add(k,'<div class="attn">تعذّر تضمين «'+esc(r.name)+'».</div>');});
+      add(k,'<div class="attn">مرفق: «'+esc(r.name)+'» (هذا النوع لا يظهر في النماذج — احفظه PDF أو صورة).</div>');});});});});
+  return chain.then(function(){
+    return '<!DOCTYPE html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>تقييم الأداء حسب البنود</title>'+
+    '<style>body{font-family:Tahoma,Arial,sans-serif;padding:20px;color:#111;font-size:12px}'+
+    'table{border-collapse:collapse;width:100%;margin-top:8px}th,td{border:1px solid #777;padding:5px;text-align:right;vertical-align:top}'+
+    'th{background:#eceff0}h2{font-size:14px;margin-top:16px}.hdr{margin-bottom:8px}tr{break-inside:avoid}tr.attr{break-inside:auto}'+
+    '.att{margin:6px 0 10px;text-align:center;break-inside:avoid;page-break-inside:avoid}.att img{max-width:100%;object-fit:contain;border:1px solid #bbb}'+
+    '.att.ph{display:inline-block;width:47%;margin:4px 1.2%;vertical-align:top}.att.ph img{max-height:95mm}.att.pg img{max-height:245mm}'+
+    '.att figcaption{font-size:10px;color:#444;margin-top:2px}.attn{font-size:11px;color:#444;padding:4px 0}'+
+    '@media print{body{padding:0}}</style>'+printHTML(att)+'</html>';});}
 function dropFileIfUnused(id){
   var used=Object.keys(S.it).some(function(k){return (S.it[k].fl||[]).some(function(f){return f.id===id;});});
   if(used)return;
@@ -961,7 +987,8 @@ function renderAllFiles(){
       '<small>'+esc(e.t)+'</small><div class="files">'+fl.map(function(f,j){
         return '<span class="fchip">'+fileLink(f)+
         '<button data-fdel="'+k+'|'+j+'">×</button></span>';}).join("")+'</div></div></div>');});});
-  $("#allFiles").innerHTML=out.length?out.join(""):'<div class="sub">لا توجد مرفقات بعد.</div>';}
+  $("#allFiles").innerHTML=out.length?out.join(""):'<div class="sub">لا توجد مرفقات بعد.</div>';
+  renderBatch();}
 
 function attach(k,rec){
   var cur=Array.isArray(S.it[k].fl)?S.it[k].fl.slice():[];
@@ -1048,25 +1075,96 @@ function runClassify(file){
         '<button class="btn sm" data-acc="'+j+'">اربطه هنا</button></div>';}).join("")+manualBox("أو اختر بندًا آخر:")+'</div>';
   bindManual(note);}
 
-function doUpload(file,targetKey){
-  if(file.size>20*1024*1024){upSt("الملف «"+file.name+"» أكبر من ٢٠ ميجابايت.");return;}
-  upSt("جارٍ حفظ المرفق…");
+function saveFile(file){
+  if(file.size>20*1024*1024){upSt("الملف «"+file.name+"» أكبر من ٢٠ ميجابايت.");return Promise.resolve(null);}
   var id="f"+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
   var rec={blob:file,name:file.name||"مرفق",type:file.type||TYPES[extOf(file.name)]||"application/octet-stream"};
-  filePut(id,rec).then(function(ok){
-    if(!ok){upSt("تعذّر حفظ المرفق — قد تكون مساحة الجهاز ممتلئة.");return;}
-    FILES[id]=rec;var r={id:id,n:rec.name};
+  return filePut(id,rec).then(function(ok){
+    if(!ok){upSt("تعذّر حفظ «"+rec.name+"» — قد تكون مساحة الجهاز ممتلئة.");return null;}
+    FILES[id]=rec;return {id:id,n:rec.name};});}
+function doUpload(file,targetKey){
+  upSt("جارٍ حفظ المرفق…");
+  saveFile(file).then(function(r){
+    if(!r)return;
     if(targetKey){attach(targetKey,r);upSt("");return;}
     pendingFile=r;lastApplied=null;runClassify(file);
   });}
+/* عدة ملفات معًا بلا بند محدد: تُحفظ كلها ثم تظهر في قائمة «اربط كل ملف ببنده» */
+function handleFiles(fs,targetKey){
+  fs=Array.prototype.slice.call(fs||[]);if(!fs.length)return;
+  if(targetKey||fs.length===1){fs.forEach(function(f){doUpload(f,targetKey);});return;}
+  var note=$("#fnote").value.trim();
+  upSt("جارٍ حفظ الملفات ("+AR(fs.length)+")…");
+  var chain=Promise.resolve();
+  fs.forEach(function(f){chain=chain.then(function(){return saveFile(f).then(function(r){
+    if(r)BATCH[r.id]={note:note,k:"",manual:false};});});});
+  chain.then(function(){upSt("");$("#sugBox").innerHTML="";pendingFile=null;sugPicks=[];lastApplied=null;
+    renderBatch();var b=$("#batchBox");if(b&&b.scrollIntoView)b.scrollIntoView({behavior:"smooth",block:"start"});});}
 
 function pickFiles(targetKey){
   var inp=$("#fin");inp.value="";
-  inp.onchange=function(){
-    var fs=Array.prototype.slice.call(inp.files||[]);
-    if(!targetKey&&fs.length>1){fs.forEach(function(f){doUpload(f,null);});return;}
-    fs.forEach(function(f){doUpload(f,targetKey);});};
+  inp.onchange=function(){handleFiles(inp.files,targetKey);};
   inp.click();}
+
+/* ---- مرفقات لم تُربط ببند: كل ملف مع بنده وصياغته ---- */
+var BATCH={};
+function usedIds(){var u={};Object.keys(S.it).forEach(function(k){(S.it[k].fl||[]).forEach(function(f){u[f.id]=1;});});return u;}
+function unlinkedIds(){var u=usedIds();
+  return Object.keys(FILES).filter(function(id){return !u[id]&&!(pendingFile&&pendingFile.id===id);});}
+function batchGuess(id){
+  var b=BATCH[id],r=FILES[id];if(!b||!r)return;
+  if(!b.manual){var res=classify(b.note+" "+String(r.name).replace(/\.[^.]+$/,"").replace(/[_\-.]+/g," "));b.k=res.length?res[0].k:"";}}
+function batchWasf(id){var b=BATCH[id];if(!b||!b.k)return "";return wasfFromNote(b.note)||bankOf(b.k).w;}
+function renderBatch(){
+  var box=$("#batchBox");if(!box)return;
+  var ids=unlinkedIds();
+  Object.keys(BATCH).forEach(function(id){if(ids.indexOf(id)<0)delete BATCH[id];});
+  if(!ids.length){box.innerHTML="";return;}
+  ids.forEach(function(id){if(!BATCH[id])BATCH[id]={note:"",k:"",manual:false};batchGuess(id);});
+  var ready=ids.filter(function(id){return BATCH[id].k;}).length;
+  box.innerHTML='<div class="sug"><div class="sh" style="font-size:13px;color:var(--ink)"><b>مرفقات لم تُربط ببند بعد ('+AR(ids.length)+
+    ')</b> — لن تظهر في الطباعة حتى تربطها.</div>'+
+    '<div class="sub" style="margin:0 0 8px">اكتب تحت كل ملف كلمتين عمّا يثبته (مثل: «إذاعة مدرسية» أو «تكريم المتفوقين»)، فيختار البرنامج بنده ويصوغ الشاهد. البرنامج لا يقرأ محتوى الصورة، بل كلماتك واسم الملف. ويمكنك تغيير البند بنفسك.</div>'+
+    ids.map(function(id){var r=FILES[id],b=BATCH[id],w=batchWasf(id);
+      var th=isImg(r)?'<img src="'+furl(id)+'" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">':
+        '<div style="width:64px;height:64px;display:grid;place-items:center;border-radius:8px;background:var(--soft);font-size:26px">'+(isPdf(r)?"📕":"📄")+'</div>';
+      return '<div class="sugrow" data-brow="'+id+'">'+th+'<div class="si">'+
+        '<small style="margin-bottom:4px">'+esc(r.name)+'</small>'+
+        '<input data-bnote="'+id+'" value="'+esc(b.note)+'" placeholder="ماذا يثبت هذا الملف؟" style="width:100%;margin-bottom:5px">'+
+        '<select data-bsel="'+id+'" style="width:100%"><option value="">— اختر البند —</option>'+itemOptions()+'</select>'+
+        '<small data-bw="'+id+'" style="margin-top:4px">'+(w?("الصياغة: "+esc(w)):"اكتب كلمتين أو اختر البند")+'</small></div></div>';}).join("")+
+    '<div class="row" style="margin-top:8px"><button class="btn" id="batchGo" type="button"'+(ready?"":" disabled")+'>اربط '+
+    (ready===ids.length?"الكل":(AR(ready)+" من "+AR(ids.length)))+'</button></div></div>';
+  ids.forEach(function(id){var s=box.querySelector('[data-bsel="'+id+'"]');if(s)s.value=BATCH[id].k||"";});}
+function refreshBatchRow(id){
+  var box=$("#batchBox"),s=box.querySelector('[data-bsel="'+id+'"]'),wl=box.querySelector('[data-bw="'+id+'"]'),w=batchWasf(id);
+  if(s)s.value=BATCH[id].k||"";
+  if(wl)wl.textContent=w?("الصياغة: "+w):"اكتب كلمتين أو اختر البند";
+  var ids=unlinkedIds(),ready=ids.filter(function(x){return BATCH[x]&&BATCH[x].k;}).length,g=$("#batchGo");
+  if(g){g.disabled=!ready;g.textContent="اربط "+(ready===ids.length?"الكل":(AR(ready)+" من "+AR(ids.length)));}}
+function batchApply(){
+  var n=0,keys={};
+  unlinkedIds().forEach(function(id){var b=BATCH[id];if(!b||!b.k||!S.it[b.k])return;
+    var st=S.it[b.k],cur=Array.isArray(st.fl)?st.fl.slice():[];
+    cur.push({id:id,n:FILES[id].name});st.fl=cur;
+    var w=batchWasf(id),old=String(st.d||"").trim();
+    if(w&&old.indexOf(w)<0)st.d=old?(old+" · "+w):w;
+    delete BATCH[id];n++;keys[b.k]=1;});
+  if(!n)return;
+  save();reRender();renderAllFiles();
+  upSt("✓ رُبط كل مرفق ببنده وأُضيفت صياغته — المرفقات: "+AR(n)+"، البنود: "+AR(Object.keys(keys).length)+".");}
+document.addEventListener("input",function(ev){
+  var t=ev.target,id=t.dataset&&t.dataset.bnote;if(!id||!BATCH[id])return;
+  BATCH[id].note=t.value;BATCH[id].manual=false;batchGuess(id);refreshBatchRow(id);});
+document.addEventListener("change",function(ev){
+  var t=ev.target,id=t.dataset&&t.dataset.bsel;if(!id||!BATCH[id])return;
+  BATCH[id].k=t.value;BATCH[id].manual=!!t.value;refreshBatchRow(id);});
+document.addEventListener("click",function(ev){if(ev.target.closest&&ev.target.closest("#batchGo"))batchApply();});
+/* تنبيه قبل الطباعة إن وُجدت مرفقات غير مربوطة */
+function warnUnlinked(go){
+  var n=unlinkedIds().length;if(!n){go();return;}
+  toast("تنبيه: توجد مرفقات لم تُربط ببند ("+AR(n)+") ولن تظهر في الطباعة. اربطها من تبويب «رفع المرفقات».",
+    {label:"اطبع على أي حال",fn:function(){hideToast();go();}},12000);}
 
 /* ============ ملف PDF كامل مرسوم داخل البرنامج (للآيفون وللتنزيل) ============ */
 var RFONT="'IBM Plex Sans Arabic', Tahoma, sans-serif";
@@ -1318,7 +1416,7 @@ Promise.all([idbGet("state"),fileGetAll()]).then(function(a){
     e.preventDefault();d.classList.remove("over");});});
   d.addEventListener("drop",function(e){
     var fs=(e.dataTransfer&&e.dataTransfer.files)||[];
-    Array.prototype.slice.call(fs).forEach(function(f){doUpload(f,null);});});})();
+    handleFiles(fs,null);});})();
 </script>
 
 <script>
