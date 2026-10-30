@@ -417,7 +417,7 @@ th{color:var(--muted);font-weight:600;font-size:11px}
 /* ================= إعدادات المنتج والتخزين ================= */
 var PRODUCT="SHAWAHID",VERSION="1",SELLER_WA="966535677847";
 /* رقم إصدار البرنامج للمستخدم (غير رقم الترخيص VERSION) */
-var APP_VER="1.4";
+var APP_VER="1.5";
 var PUBLIC_KEY={"kty": "EC", "x": "lhhgqnPakrm0Th_UjGXUSFIZUG8Al2ymWhC0-aDv2zI", "y": "aD_FeunDFVqxvxaLmeWBF_83h3hfIDRs9SyOqF9aJ18", "crv": "P-256"};
 var LS_STATE="sh_state_v1",LS_DEV="sh-device",LS_LIC="sh-lic";
 var IS_IOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
@@ -1470,16 +1470,49 @@ function showGate(code){
       if(!ok){st.style.color="var(--red)";
         st.textContent=b32decode(key).length!==64?"المفتاح ناقص أو فيه أحرف زائدة. انسخه كاملًا كما وصلك.":
           "المفتاح غير صحيح لهذا الجهاز أو لهذا البرنامج. تأكد أنك أرسلت الرمز الظاهر أعلاه نفسه.";return;}
-      lsSet(LS_LIC,key);return idbSet("licKey",key).then(function(){
+      return licSave(code,key).then(function(){
         st.style.color="var(--brand)";st.textContent="تم التفعيل بنجاح ✓";setTimeout(openApp,600);});
     }).catch(function(e){st.style.color="var(--red)";
       st.textContent=e&&e.code==="insecure"?"افتح البرنامج من رابطه الآمن (https) حتى يعمل التحقق.":"تعذّر التحقق الآن، أعد المحاولة.";
     }).then(function(){$("#actBtn").disabled=false;});};}
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist();}catch(e){}
-deviceCode().then(function(code){
-  return idbGet("licKey").then(function(k){k=k||lsGet(LS_LIC);
-    return (k?verifyKey(code,k).catch(function(){return false;}):Promise.resolve(false)).then(function(ok){
-      if(ok)openApp();else showGate(code);});});});
+var LIC_NAME="ملف شواهد الأداء",LIC_LS=LS_LIC;
+/* رخصة الجهاز الواحد: يحتاج LIC_NAME وLIC_LS من الملف المضيف، ومعها PRODUCT وVERSION وverifyKey وidbGet وidbSet وlsGet وlsSet */
+var LIC_API = 'https://mudeer-api.khuf-school.workers.dev/api/lic', LIC = {code:'', key:''};
+function licCall(code, key, device, claim){
+  var c = new AbortController(), t = setTimeout(function(){ c.abort(); }, 6000);
+  return fetch(LIC_API, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({p:PRODUCT, v:VERSION, code:code, key:key, device:device, claim:!!claim}), signal:c.signal})
+    .then(function(r){ return r.json().catch(function(){ return {}; }); }).finally(function(){ clearTimeout(t); });
+}
+function licStore(code, key){ LIC = {code:code, key:key}; lsSet(LIC_LS, key); lsSet(LIC_LS + '-code', code); return idbSet('licCode', code).then(function(){ return idbSet('licKey', key); }); }
+// بعد التفعيل برمز الجهاز: تسجيل الجهاز لا يوقف الاستخدام إن تعذّر الاتصال
+function licSave(code, key){ return licStore(code, key).then(function(){ licCall(code, key, code, false).catch(function(){}); licButton(); }); }
+var LIC_MOVES = 'نُقل الاشتراك كثيرًا هذا الشهر. تواصل مع البائع.';
+function licCss(){ if (document.getElementById('licCss')) return; var s = document.createElement('style'); s.id = 'licCss';
+  s.textContent = '#licBtn{position:fixed;bottom:12px;left:12px;z-index:40;font:600 13px inherit;font-family:inherit;padding:7px 12px;border-radius:9px;border:1px solid #cdd8d4;background:#fff;color:#123;cursor:pointer}.licOv{position:fixed;inset:0;background:rgba(15,25,22,.55);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px}.licBox{background:#fff;color:#123;border-radius:14px;max-width:440px;width:100%;padding:20px;direction:rtl;font-family:inherit;line-height:1.7}.licBox h3{margin:0 0 8px}.licBox button{font:600 14px inherit;font-family:inherit;padding:8px 14px;border-radius:9px;border:1px solid #cdd8d4;background:#fff;cursor:pointer;margin:4px 0 4px 6px}.licBox .pri{background:#0f6e56;color:#fff;border-color:#0f6e56}.licKey{direction:ltr;word-break:break-all;background:#eef2f0;padding:8px;border-radius:8px;font-size:13px}#oldSub{margin-top:14px;text-align:right}#oldSub input,#oldSub textarea{width:100%;box-sizing:border-box;padding:8px;margin:6px 0;border:1px solid #cdd8d4;border-radius:8px;font:inherit;direction:ltr}@media print{#licBtn,.licOv{display:none!important}}';
+  document.head.appendChild(s); }
+function licBox(html){ licCss(); var o = document.createElement('div'); o.className = 'licOv'; o.innerHTML = '<div class="licBox">' + html + '</div>'; document.body.appendChild(o); return o; }
+function licButton(){ licCss(); if (document.getElementById('licBtn')) return; var b = document.createElement('button'); b.id = 'licBtn'; b.type = 'button'; b.textContent = 'رمز الاشتراك'; document.body.appendChild(b);
+  b.onclick = function(){ var o = licBox('<h3>رمز الاشتراك</h3><p>لفتح اشتراكك في جوال آخر افتح «' + LIC_NAME + '» هناك واختر «عندي اشتراك سابق» ثم اكتب الرمز والمفتاح. الاشتراك لمستخدم واحد، فيُغلق على هذا الجهاز عند نقله.</p><p><b>رمز الاشتراك</b></p><div class="licKey" id="licC"></div><p><b>مفتاح التفعيل</b></p><div class="licKey" id="licK"></div><p><button class="pri" id="licCopy" type="button">نسخ الرمز والمفتاح</button><button id="licClose" type="button">إغلاق</button></p>');
+    o.querySelector('#licC').textContent = LIC.code; o.querySelector('#licK').textContent = LIC.key;
+    o.querySelector('#licClose').onclick = function(){ o.remove(); };
+    o.querySelector('#licCopy').onclick = function(e){ var t = e.target; (navigator.clipboard ? navigator.clipboard.writeText(LIC.code + '\n' + LIC.key) : Promise.reject()).then(function(){ t.textContent = 'تم النسخ ✓'; }, function(){ t.textContent = 'انسخهما يدويًا'; }); }; }; }
+function licMoved(code, key, device, start){ var o = licBox('<h3>الاشتراك مفتوح على جهاز آخر</h3><p>الاشتراك لمستخدم واحد وجهاز واحد. يمكنك نقله إلى هذا الجهاز، وعندها يُغلق على الجهاز الآخر. بياناتك في الجهاز الآخر لا تنتقل تلقائيًا.</p><button class="pri" id="licMv" type="button">نقل الاشتراك إلى هذا الجهاز</button><p id="licSt"></p>');
+  o.querySelector('#licMv').onclick = function(){ var st = o.querySelector('#licSt'); st.textContent = 'جارٍ النقل…';
+    licCall(code, key, device, true).then(function(r){ if (r.ok) return licStore(code, key).then(function(){ o.remove(); start(); licButton(); }); st.textContent = r.error === 'too_many_moves' ? LIC_MOVES : 'تعذّر النقل.'; }).catch(function(){ st.textContent = 'تحقق من الإنترنت ثم أعد المحاولة.'; }); }; }
+// خانة نقل الاشتراك في شاشة التفعيل
+function licOldBox(device, start){ licCss(); if (document.getElementById('oldSub')) return; var d = document.createElement('details'); d.id = 'oldSub'; document.getElementById('gate').appendChild(d);
+  var lost = 'https://wa.me/966535677847?text=' + encodeURIComponent('السلام عليكم، أحتاج استعادة رمز اشتراكي في «' + LIC_NAME + '».');
+  d.innerHTML = '<summary>عندي اشتراك سابق: نقله إلى هذا الجهاز</summary><p>تجد الرمز والمفتاح في الجهاز القديم من زر «رمز الاشتراك»، أو في رسالة التفعيل.</p><input id="oldC" placeholder="رمز الاشتراك XXXX-XXXX" autocomplete="off"><textarea id="oldK" rows="3" placeholder="مفتاح التفعيل" spellcheck="false"></textarea><div class="row"><button class="btn" id="oldBtn" type="button">نقل الاشتراك</button></div><div class="status" id="oldSt" role="status"></div><p><a href="' + lost + '" target="_blank" rel="noopener">فقدت الرمز؟ استعده من البائع</a></p>';
+  d.querySelector('#oldBtn').onclick = function(){ var st = d.querySelector('#oldSt'), code = d.querySelector('#oldC').value.trim().toUpperCase(), key = d.querySelector('#oldK').value.trim(); st.textContent = 'جارٍ التحقق…';
+    Promise.resolve(verifyKey(code, key)).then(function(ok){ if (!ok) { st.textContent = 'الرمز والمفتاح غير متطابقين.'; return; }
+      return licCall(code, key, device, true).then(function(r){ if (r.ok) return licStore(code, key).then(function(){ document.getElementById('gate').hidden = true; start(); licButton(); }); st.textContent = r.error === 'too_many_moves' ? LIC_MOVES : 'تعذّر النقل.'; }); }).catch(function(){ st.textContent = 'تحقق من الإنترنت ثم أعد المحاولة.'; }); }; }
+// عند انقطاع الإنترنت يعمل البرنامج كالمعتاد؛ لا يُغلق إلا إذا أكد الخادم نقله
+function licBoot(device, start, gate){ return Promise.all([idbGet('licCode'), idbGet('licKey')]).then(function(v){ var code = v[0] || lsGet(LIC_LS + '-code') || device, key = v[1] || lsGet(LIC_LS);
+  return (key ? Promise.resolve(verifyKey(code, key)).catch(function(){ return false; }) : Promise.resolve(false)).then(function(ok){ if (!ok) { gate(device); licOldBox(device, start); return; } LIC = {code:code, key:key};
+    return licCall(code, key, device, false).catch(function(){ return {}; }).then(function(r){ if (r.moved) return licMoved(code, key, device, start); start(); licButton(); }); }); }); }
+
+deviceCode().then(function(d){return licBoot(d,openApp,showGate);});
 /* ---- رقم الإصدار وشريط «يوجد تحديث» حتى يحدّث المستخدم ---- */
 function verParts(v){return String(v||"0").split(".").map(function(x){return Number(x)||0;});}
 function isNewer(a,b){a=verParts(a);b=verParts(b);
